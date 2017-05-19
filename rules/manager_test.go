@@ -255,3 +255,50 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 	}
 	return result, nil
 }
+
+func TestCopyState(t *testing.T) {
+	oldGroup := &Group{
+		rules: []Rule{
+			NewAlertingRule("alert", nil, 0, nil, nil),
+			NewRecordingRule("rule1", nil, nil),
+			NewRecordingRule("rule2", nil, nil),
+			NewRecordingRule("rule3", nil, nil),
+			NewRecordingRule("rule3", nil, nil),
+		},
+		seriesInPreviousEval: []map[string]labels.Labels{
+			map[string]labels.Labels{"a": nil},
+			map[string]labels.Labels{"r1": nil},
+			map[string]labels.Labels{"r2": nil},
+			map[string]labels.Labels{"r3a": nil},
+			map[string]labels.Labels{"r3b": nil},
+		},
+	}
+	oldGroup.rules[0].(*AlertingRule).active[42] = nil
+	newGroup := &Group{
+		rules: []Rule{
+			NewRecordingRule("rule3", nil, nil),
+			NewRecordingRule("rule3", nil, nil),
+			NewRecordingRule("rule3", nil, nil),
+			NewAlertingRule("alert", nil, 0, nil, nil),
+			NewRecordingRule("rule1", nil, nil),
+			NewRecordingRule("rule4", nil, nil),
+		},
+		seriesInPreviousEval: make([]map[string]labels.Labels, 6),
+	}
+	newGroup.copyState(oldGroup)
+
+	want := []map[string]labels.Labels{
+		map[string]labels.Labels{"r3a": nil},
+		map[string]labels.Labels{"r3b": nil},
+		nil,
+		map[string]labels.Labels{"a": nil},
+		map[string]labels.Labels{"r1": nil},
+		nil,
+	}
+	if !reflect.DeepEqual(want, newGroup.seriesInPreviousEval) {
+		t.Fatalf("seriesInPreviousEval not as expected. Wanted: %+v Got: %+v", want, newGroup.seriesInPreviousEval)
+	}
+	if !reflect.DeepEqual(oldGroup.rules[0], newGroup.rules[3]) {
+		t.Fatalf("Active alerts not as expected. Wanted: %+v Got: %+v", oldGroup.rules[0], oldGroup.rules[3])
+	}
+}
